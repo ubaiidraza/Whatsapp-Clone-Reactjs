@@ -1,96 +1,77 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../services/firebase';
-import { collection, query, where, onSnapshot, addDoc, serverTimestamp, orderBy } from 'firebase/firestore';
-import { useAuth } from '../context/AuthContext';
+// src/components/ChatArea.jsx
+import { useEffect, useState } from "react";
+import { db } from "../services/firebase";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+} from "firebase/firestore";
 
-export default function ChatArea({ chat }) {
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+import { useAuth } from "../context/AuthContext";
+
+
+const ChatArea = ({ selectedUser }) => {
   const { currentUser } = useAuth();
-  const messagesEndRef = useRef(null);
+  const [text, setText] = useState("");
+  const [messages, setMessages] = useState([]);
+
+  const chatId = currentUser.uid > selectedUser.uid
+    ? `${currentUser.uid + selectedUser.uid}`
+    : `${selectedUser.uid + currentUser.uid}`;
 
   useEffect(() => {
-    if (chat) {
-      const messagesRef = collection(db, 'chats', chat.id, 'messages');
-      const q = query(messagesRef, orderBy('createdAt', 'asc'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      return unsubscribe;
-    }
-  }, [chat]);
+    const q = query(
+      collection(db, "messages"),
+      where("chatId", "==", chatId),
+      orderBy("createdAt", "asc")
+    );
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const unsub = onSnapshot(q, snapshot => {
+      setMessages(snapshot.docs.map(doc => doc.data()));
+    });
 
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    if (newMessage.trim() !== '') {
-      await addDoc(collection(db, 'chats', chat.id, 'messages'), {
-        text: newMessage,
-        createdAt: serverTimestamp(),
-        userId: currentUser.uid,
-        userName: currentUser.displayName || 'Anonymous'
-      });
-      setNewMessage('');
-    }
+    return () => unsub();
+  }, [chatId]);
+
+  const handleSend = async () => {
+    if (text.trim() === "") return;
+    await addDoc(collection(db, "messages"), {
+      text,
+      senderId: currentUser.uid,
+      receiverId: selectedUser.uid,
+      chatId,
+      createdAt: serverTimestamp(),
+    });
+    setText("");
   };
 
-  if (!chat) {
-    return (
-      <div className="flex items-center justify-center h-full bg-gray-50">
-        <p className="text-gray-500">Select a chat to start messaging</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-800">{chat.name || 'Chat'}</h2>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.userId === currentUser.uid ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[70%] rounded-lg p-3 ${
-                msg.userId === currentUser.uid
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              <p className="text-sm">{msg.text}</p>
-              <p className="text-xs mt-1 opacity-70">
-                {msg.userName} • {msg.createdAt?.toDate().toLocaleTimeString()}
-              </p>
+    <div className="w-2/3 p-4 flex flex-col">
+      <h2 className="font-bold mb-2 border-b pb-2">{selectedUser.displayName}</h2>
+      <div className="flex-1 overflow-y-auto mb-4">
+        {messages.map((msg, i) => (
+          <div key={i} className={`mb-2 ${msg.senderId === currentUser.uid ? "text-right" : "text-left"}`}>
+            <div className="inline-block bg-blue-200 px-3 py-1 rounded">
+              {msg.text}
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
       </div>
-
-      <form onSubmit={sendMessage} className="p-4 border-t border-gray-200">
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors duration-200"
-          >
-            Send
-          </button>
-        </div>
-      </form>
+      <div className="flex">
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          className="border flex-1 rounded p-2"
+          placeholder="Type message..."
+        />
+        <button onClick={handleSend} className="bg-blue-500 text-white px-4 ml-2 rounded">Send</button>
+      </div>
     </div>
   );
-}
+};
+
+export default ChatArea;
